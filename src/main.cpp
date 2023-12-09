@@ -8,6 +8,8 @@ void setup()
 #else
   Serial.begin(115200);
   while (!Serial);// wait for serial port to connect. Needed for native USB
+  // Just to know which program is running on my Arduino
+  Serial.println(F("START " __FILE__ " from " __DATE__));
 #endif
 
   setupL04();
@@ -29,6 +31,8 @@ void setup()
   setupL20();
   setupL21();
   setupL22();
+
+  setupL34();
 }
 
 void loop() 
@@ -52,6 +56,8 @@ void loop()
   loopL20();
   loopL21();
   loopL22();
+
+  loopL34();
 }
 
 /******************************************** SETUP *****************************************/
@@ -189,9 +195,8 @@ void setupL13(){
 /*IR Receiver Module */
 void setupL14(){
 #ifdef L14 
-  // Just to know which program is running on my Arduino
-  Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE));
-
+  //Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE));
+  Serial.println(F("Using library version " VERSION_IRREMOTE));
   // Start the receiver and if not 3. parameter specified, take LED_BUILTIN pin from the internal boards definition as default feedback LED
   IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK);
 
@@ -336,7 +341,7 @@ void setupL21(void){
 	while (!Serial);		// Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
 	SPI.begin();			// Init SPI bus
 	mfrc522.PCD_Init();		// Init MFRC522
-	delay(4);				// Optional delay. Some board do need more time after init to be ready, see Readme
+	delay(4);				// Optional delay. Some board do need more time after init to be ready
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details	
 #endif  
 }
@@ -346,6 +351,23 @@ void setupL22(void){
 #ifdef L22
 	
 #endif  
+}
+
+/*7941E 3Pin 125KHz (TZT RFID UART Reader Wireless Module) */
+void setupL34(void){
+#ifdef L34
+#ifndef RFID2
+  gwiot7941e.begin(RFID_READER_RX_PIN);
+#else
+  //pinMode(RFID_READER_RX_PIN, INPUT);
+  if (!stream_) {
+    stream_ = softwareSerial_ = new SoftwareSerial(RFID_READER_RX_PIN, RFID_READER_TX_PIN);
+    softwareSerial_->begin(GWIOT_7941E_BAUDRATE);
+    }
+  softwareSerial_->begin(GWIOT_7941E_BAUDRATE);
+  stream_->setTimeout(GWIOT_7941E_READ_TIMEOUT);
+#endif
+#endif
 }
 
 /******************************************** LOOP *****************************************/
@@ -776,10 +798,17 @@ void loopL21(void){
 	
 	if (!mfrc522.PICC_IsNewCardPresent()) return;	
 	if (!mfrc522.PICC_ReadCardSerial()) return;
-
-	// Dump debug info about the card; PICC_HaltA() is automatically called
+  
+  //init key '46 D7 97 C8 24 21'
+  MFRC522::MIFARE_Key key;
+  key.keyByte[0] = 0x46; key.keyByte[1] = 0xD7; key.keyByte[2] = 0x97;
+  key.keyByte[3] = 0xC8; key.keyByte[4] = 0x24; key.keyByte[5] = 0x21;
+	
+  // Dump debug info about the card; PICC_HaltA() is automatically called  
   digitalWrite(LED_PIN, HIGH);
-	mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
+  //mfrc522.PCD_Authenticate();
+  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
+  //mfrc522.dum
   digitalWrite(LED_PIN, LOW);  
 #endif  
 #endif  
@@ -793,4 +822,70 @@ void loopL22(void){
   //Serial.print(printBuffer);
 #endif  
 #endif  
+}
+
+/*7941E 3Pin 125KHz (TZT RFID UART Reader Wireless Module) */
+void loopL34(void){
+#ifdef L34
+#ifndef RFID2
+  if (gwiot7941e.update()) {    
+    Serial.println(gwiot7941e.getLastTagId(), HEX);
+  }
+  else Serial.print("*");
+#else
+    char buff[100];
+
+    while(Serial.available()){
+      Serial.print(" ");
+      Serial.print(Serial.read(), HEX);
+    }
+    
+    if (!stream_) return;// false;
+
+    //set 115200 (3F3F3F3F3F 40)
+    byte test1[]{0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x31, 0x31, 0x35, 0x32, 0x30, 0x30, 0x40};
+    stream_->write(test1, 12);
+    byte test2[]{0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x40};
+    stream_->write(test2, 6);
+    
+    char test[] = "Delete all cards @";//"Query all cards @" "query status" "Set baud rate 115200@"
+    stream_->write(test);
+
+    if (!stream_->available()){
+      Serial.print("*");
+      delay(1000);
+      return;// false;
+    }
+
+    // if a packet doesn't begin with the right byte, remove that byte
+    if (stream_->peek() != GWIOT_7941E_PACKET_BEGIN/* && stream_->read()*/) {
+      Serial.println(stream_->read());
+      return;// false;
+    }
+
+    // if read a packet with the wrong size, drop it
+    if (GWIOT_7941E_PACKET_SIZE != stream_->readBytes(buff, GWIOT_7941E_PACKET_SIZE)) {
+      Serial.println("wrong length");
+      return;// false;
+    }
+return;
+    // if a packet doesn't end with the right byte, drop it
+    //if (buff[9] != GWIOT_7941E_PACKET_END) return false;
+
+    // calculate checksum (excluding start and end bytes)
+    uint8_t checksum = 0;
+    for (uint8_t i = 1; i <= 8; ++i) {
+        checksum ^= buff[i];
+    }
+    //if (checksum) return false;
+
+    // extract tag id from message
+    lastTagId_ = 0;
+    for (uint8_t i = 0; i <= 3; ++i) {
+        uint32_t val = (uint8_t) buff[i+4];
+        lastTagId_ |= val << (8 * (3 - i));
+    }
+#endif
+  delay(1000);
+#endif
 }

@@ -26,6 +26,8 @@ char printBuffer[128];
 #define L21// RC522 RFID Module
 //#define L22// LCD1602 (LCD Display)
 
+//#define L34// 7941E 3Pin 125KHz (TZT RFID UART Reader Wireless Module)
+
 #if defined(L06) || defined(L07) || defined(L09) || defined(L10) || defined(L12) || defined(L16) || defined(L17) || defined(L18) || defined(L19) || defined(L20) || defined(L21)
 #define L05
 #endif
@@ -51,7 +53,8 @@ char printBuffer[128];
 41    : IR Reciver
 42    : HC-SR501 (PIR)
 43    : Sound Sensor Module (digital output)
-44-49 : -----free to use
+44-48 : -----free to use
+49    : 7941E DO/TX (or RFID2 module TXD)
 50-53 : RC522 (MOSI, MISO, SCK, SDA(SS))
 -------------------------ANALOG--------------------
 A0    : Water Level Detection Sensor Module
@@ -238,6 +241,21 @@ MFRC522 mfrc522(RC522_SS_PIN, RC522_RST_PIN);
 
 #endif
 
+#ifdef L34 /* 7941E 3Pin 125KHz (TZT RFID UART Reader Wireless Module) */
+#include <Gwiot7941e.h>
+
+#define RFID_READER_RX_PIN 48
+#define RFID_READER_TX_PIN 49
+//#define RFID2 //comment to use GWIOUT 7941E
+#ifndef RFID2
+Gwiot7941e gwiot7941e;
+#else 
+SoftwareSerial *softwareSerial_ = NULL;
+Stream *stream_ = NULL;
+uint32_t lastTagId_ = 0;
+#endif
+#endif
+
 void setupL04(void);
 void setupL05(void);
 void setupL06(void);
@@ -257,6 +275,8 @@ void setupL19(void);
 void setupL20(void);
 void setupL21(void);
 void setupL22(void);
+
+void setupL34(void);
 
 void loopL04(void);
 void loopL05(void);
@@ -278,3 +298,5 @@ void loopL19(void);
 void loopL20(void);
 void loopL21(void);
 void loopL22(void);
+
+void loopL34(void);
